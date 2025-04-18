@@ -9,13 +9,11 @@ from typing import Dict, List, Tuple, Optional
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
 
 class HolidayNotifierBot:
     def __init__(self):
@@ -28,7 +26,6 @@ class HolidayNotifierBot:
         self.job = None
 
     def _load_notification_settings(self) -> Dict:
-        """Загрузка настроек уведомлений из файла"""
         settings_path = Path("notification_settings.json")
         try:
             with settings_path.open('r') as f:
@@ -41,12 +38,10 @@ class HolidayNotifierBot:
             return {"enabled": True, "hour": 9, "minute": 15}
 
     def _save_notification_settings(self) -> None:
-        """Сохранение настроек уведомлений"""
         with open("notification_settings.json", 'w') as f:
             json.dump(self.notification_settings, f, indent=4)
 
     def _load_holidays(self) -> Dict[Tuple[int, int], List[Dict]]:
-        """Загрузка данных о праздниках"""
         try:
             with open("holidays.json", "r", encoding="utf-8") as f:
                 holidays_json = json.load(f)
@@ -63,7 +58,6 @@ class HolidayNotifierBot:
             return {}
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Обработчик команды /start"""
         self.chat_id = update.effective_chat.id
         await update.message.reply_text(
             "Привет! Я буду присылать уведомления о праздниках.\n"
@@ -73,12 +67,9 @@ class HolidayNotifierBot:
             "Используй /status для проверки настроек."
         )
         logger.info(f"Чат зарегистрирован: {self.chat_id}")
-
-        # Перезапускаем задание с новым chat_id
         await self._restart_job(context.application)
 
     async def settime(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Установка времени уведомлений"""
         try:
             time_str = context.args[0]
             hour, minute = map(int, time_str.split(":"))
@@ -98,7 +89,6 @@ class HolidayNotifierBot:
             await update.message.reply_text("❌ Используйте формат: /settime HH:MM (например, /settime 09:15)")
 
     async def test_notification(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Тестовая отправка уведомления"""
         if not self.chat_id:
             await update.message.reply_text("⚠ Сначала зарегистрируйтесь с помощью /start")
             return
@@ -118,7 +108,6 @@ class HolidayNotifierBot:
             await update.message.reply_text("ℹ Сегодня нет праздников для уведомления")
 
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Проверка текущих настроек"""
         status_msg = (
             f"📅 Текущие настройки:\n"
             f"Чат ID: {self.chat_id or 'не установлен'}\n"
@@ -129,7 +118,6 @@ class HolidayNotifierBot:
         await update.message.reply_text(status_msg)
 
     def _get_holidays_message(self) -> Optional[str]:
-        """Формирование сообщения о праздниках"""
         now = datetime.now(self.timezone)
         today = (now.month, now.day)
 
@@ -142,7 +130,6 @@ class HolidayNotifierBot:
         return None
 
     async def _send_notification(self, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Отправка уведомления по расписанию"""
         if not self.notification_settings["enabled"] or not self.chat_id:
             return
 
@@ -162,7 +149,6 @@ class HolidayNotifierBot:
                 logger.error(f"Ошибка отправки: {e}")
 
     async def _restart_job(self, application) -> None:
-        """Перезапуск задания уведомлений"""
         if self.job:
             self.job.schedule_removal()
 
@@ -180,28 +166,23 @@ class HolidayNotifierBot:
             f"Уведомления запланированы на {self.notification_settings['hour']:02d}:{self.notification_settings['minute']:02d}")
 
     def run(self) -> None:
-        """Запуск бота"""
-        application = Application.builder().token(self.bot_token).build()
+            application = Application.builder().token(self.bot_token).build()
+            application.add_handler(CommandHandler("start", self.start))
+            application.add_handler(CommandHandler("settime", self.settime))
+            application.add_handler(CommandHandler("test", self.test_notification))
+            application.add_handler(CommandHandler("status", self.status))
 
-        # Регистрация обработчиков команд
-        application.add_handler(CommandHandler("start", self.start))
-        application.add_handler(CommandHandler("settime", self.settime))
-        application.add_handler(CommandHandler("test", self.test_notification))
-        application.add_handler(CommandHandler("status", self.status))
+            application.job_queue.run_once(
+                lambda ctx: asyncio.create_task(self._restart_job(ctx.application)),
+                when=0
+            )
 
-        # Настройка уведомлений при старте
-        application.job_queue.run_once(
-            lambda ctx: asyncio.create_task(self._restart_job(ctx.application)),
-            when=0
-        )
-
-        logger.info("Бот запущен и готов к работе")
-        application.run_polling()
-
+            logger.info("Бот запущен и готов к работе")
+            application.run_polling()
 
 if __name__ == '__main__':
-    try:
-        bot = HolidayNotifierBot()
-        bot.run()
-    except Exception as e:
-        logger.error(f"Фатальная ошибка: {e}", exc_info=True)
+        try:
+            bot = HolidayNotifierBot()
+            bot.run()
+        except Exception as e:
+            logger.error(f"Фатальная ошибка: {e}", exc_info=True)
